@@ -57,6 +57,7 @@ struct LayoutContext<'a, S: FontStyle, F: Fonts<Style = S>> {
     bytes: &'a [u8],
     options: Options,
     builder: Builder<'a, S, F>,
+    heading_level: u8,
     character_reference_marker: u8,
     // Current event index.
     index: usize,
@@ -76,6 +77,7 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> LayoutContext<'a, S, F> {
             bytes,
             options,
             builder,
+            heading_level: 0,
             character_reference_marker: 0,
             index: 0,
             in_paragraph: false,
@@ -131,10 +133,15 @@ fn enter<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         // Add block quoute level.
         Name::BlockQuote => {} // TODO
 
-        // Heading
+        // Setext Heading
         //
-        // Push heading style + begin new paragraph.
-        Name::HeadingAtx | Name::HeadingSetext => on_enter_heading(context),
+        // Reset the heading level.
+        Name::HeadingSetext => context.heading_level = 0,
+
+        // Heading text
+        //
+        // Begin new paragraph.
+        Name::HeadingAtxText | Name::HeadingSetextText => on_enter_heading(context),
 
         // List
         //
@@ -200,6 +207,11 @@ fn exit<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         //
         // Layout code block.
         Name::CodeFlowChunk => {} // TODO
+
+        // Atx Heading Sequence
+        //
+        // Set the current heading level.
+        Name::HeadingAtxSequence => on_exit_atx_heading_sequence(context),
 
         // Heading
         //
@@ -281,9 +293,18 @@ fn exit<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     };
 }
 
-fn on_enter_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
-    // TODO: push heading style per the appropriate level.
+fn on_exit_atx_heading_sequence<S: FontStyle, F: Fonts<Style = S>>(
+    context: &mut LayoutContext<S, F>,
+) {
+    let event_pos = SlicePosition::from_exit_event(context.events, context.index);
+    let slice = Slice::from_position(context.bytes, &event_pos);
+    context.heading_level = match slice.as_str().len() {
+        0 => 0,
+        n => (n - 1) as u8,
+    };
+}
 
+fn on_enter_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     // Start a new paragraph.
     context.in_paragraph = true;
     assert!(context.builder.paragraph_len() == 0);
@@ -291,12 +312,21 @@ fn on_enter_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutConte
     if context.builder.page_count() != 0 {
         context.builder.page_break();
     }
+
+    if let Some(ref heading) = context.options.heading {
+        if (context.heading_level as usize) < heading.len() {
+            context
+                .builder
+                .set_style(&heading[context.heading_level as usize]);
+        }
+    }
 }
 
 fn on_exit_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     context.in_paragraph = false;
     context.builder.paragraph_break();
     context.builder.advance_line();
+    context.builder.set_style(&context.options.regular);
 }
 
 fn on_enter_paragraph<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {

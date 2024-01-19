@@ -137,6 +137,8 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
             if line_height != self.line_height {
                 self.commands
                     .push(Command::SetLineHeight { h: line_height });
+
+                self.line_height = line_height;
             }
 
             self.style = style;
