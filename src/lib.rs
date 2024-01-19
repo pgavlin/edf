@@ -4,7 +4,9 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use core::convert::AsRef;
 
+#[cfg(feature = "layout")]
 pub mod layout;
+
 mod leb128;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

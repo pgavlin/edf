@@ -4,23 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.4.18", features = ["derive"] }
+clap = { version = "4.4.18", features = ["derive"], optional = true }
 embedded-graphics = "0.8.1"
-hashbrown = "0.14.3"
+hashbrown = { version = "0.14.3", optional = true }
 libm = { version = "0.2.8", optional = true }
-lru = "0.12.1"
-markdown = { git = "https://github.com/pgavlin/markdown-rs", version = "1.0.0-alpha.16" }
+lru = { version = "0.12.1", optional = true }
+markdown = { git = "https://github.com/pgavlin/markdown-rs", version = "1.0.0-alpha.16", optional = true }
 no_std_io = { version = "0.6.0" }
-serde = { version = "1.0.195", features = ["derive"] }
-text_layout = "0.2.0"
-toml = { version = "0.8.8", features = ["parse"] }
-ttf-parser = "0.20.0"
-unicode-segmentation = "1.10.1"
-zeno = "0.3.0"
+serde = { version = "1.0.195", features = ["derive"], optional = true }
+text_layout = { version = "0.2.0", optional = true }
+toml = { version = "0.8.8", features = ["parse"], optional = true }
+ttf-parser = { version = "0.20.0", optional = true }
+unicode-segmentation = { version = "1.10.1", optional = true }
+zeno = { version = "0.3.0", optional = true }
 
 [features]
-default = ["std"]
-std = ["no_std_io/std"]
+default = ["std", "layout"]
+std = ["no_std_io/std", "dep:clap", "dep:serde", "dep:toml"]
+layout = ["dep:hashbrown", "dep:lru", "dep:markdown", "dep:text_layout", "dep:ttf-parser", "dep:unicode-segmentation", "dep:zeno"]
 libm = ["dep:libm", "zeno/libm"]
 
 [[bin]]
