@@ -12,8 +12,17 @@ use unicode_segmentation::UnicodeSegmentation;
 #[derive(Debug)]
 enum Box<'a> {
     Indent,
-    Word { text: &'a str },
-    Char { text: char },
+    SetStyle {
+        id: u16,
+        line_height: u16,
+        baseline: u16,
+    },
+    Word {
+        text: &'a str,
+    },
+    Char {
+        text: char,
+    },
 }
 
 #[derive(Debug)]
@@ -26,7 +35,7 @@ enum Penalty {
 
 // TODO: non-breaking spaces
 
-pub struct Builder<'a, S: FontStyle, F: Fonts<Style = S>> {
+pub struct Builder<S: FontStyle, F: Fonts<Style = S>> {
     // Static info.
     /// Bounding box.
     bounding_box: Rectangle,
@@ -36,12 +45,13 @@ pub struct Builder<'a, S: FontStyle, F: Fonts<Style = S>> {
     default_style: S,
 
     // Current style.
-    /// Text style.
     style: S,
     /// Style ID.
     style_id: u16,
     /// Line height
     line_height: u16,
+    /// Baseline
+    baseline: u16,
     /// Whitespace width.
     whitespace_width: f32,
     /// Whitespace stretch.
@@ -55,15 +65,12 @@ pub struct Builder<'a, S: FontStyle, F: Fonts<Style = S>> {
     // Styles
     styles: Vec<Style>,
 
-    // Items
-    items: Vec<Item<Box<'a>, (), Penalty>>,
-
     // Output
     commands: Vec<Command<String>>,
     pages: usize,
 }
 
-impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
+impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
     /// Create a new document builder.
     pub fn new(bounding_box: Rectangle, fonts: F, default_style: S) -> Self {
         let styles = vec![Style {
@@ -71,7 +78,10 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
             em_px: default_style.em_px(),
         }];
 
+        let cursor = Point::new(0, default_style.em_px() as i32);
+
         let line_height = default_style.line_height();
+        let baseline = default_style.baseline();
         let whitespace_width = default_style.em_px() as f32 / 3.0;
         let whitespace_stretch = whitespace_width / 2.0;
         let whitespace_shrink = whitespace_width / 3.0;
@@ -83,12 +93,12 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
             style: default_style,
             style_id: 0,
             line_height,
+            baseline,
             whitespace_width,
             whitespace_stretch,
             whitespace_shrink,
-            cursor: Point::new(0, 0),
+            cursor,
             styles,
-            items: Vec::new(),
             commands: Vec::new(),
             pages: 0,
         }
@@ -108,6 +118,23 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
         (font_style, (self.styles.len() - 1) as u16)
     }
 
+    pub fn set_style(&mut self, style: &Style) {
+        let (style, id) = self.get_style(style);
+        if id != self.style_id {
+            self.line_height = style.line_height();
+            self.baseline = style.baseline();
+
+            self.whitespace_width = style.em_px() as f32 / 3.0;
+            self.whitespace_stretch = self.whitespace_width / 2.0;
+            self.whitespace_shrink = self.whitespace_width / 3.0;
+
+            self.style = style;
+            self.style_id = id;
+
+            self.commands.push(Command::SetStyle { s: id });
+        }
+    }
+
     pub fn finish(self) -> (Header, Vec<Command<String>>) {
         (
             Header {
@@ -117,33 +144,96 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
         )
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.pages == 0
+    }
+
     pub fn page_count(&self) -> usize {
         self.pages
     }
 
-    pub fn paragraph_len(&self) -> usize {
-        self.items.len()
+    pub fn paragraph<'a>(self) -> ParagraphBuilder<'a, S, F> {
+        let style = self.style.clone();
+        let style_id = self.style_id;
+        let whitespace_width = self.whitespace_width;
+        let whitespace_stretch = self.whitespace_stretch;
+        let whitespace_shrink = self.whitespace_shrink;
+
+        ParagraphBuilder {
+            builder: self,
+            style,
+            style_id,
+            whitespace_width,
+            whitespace_stretch,
+            whitespace_shrink,
+            items: Vec::new(),
+        }
     }
 
+    pub fn advance_line(&mut self) {
+        let remaining = self.bounding_box.size.height as i32 - self.cursor.y;
+        if remaining < self.line_height as i32 {
+            self.page_break();
+        } else {
+            self.commands.push(Command::LineBreak);
+            self.cursor += Point::new(0, self.line_height as i32);
+        }
+    }
+
+    pub fn page_break(&mut self) {
+        self.commands.push(Command::PageBreak);
+        self.pages += 1;
+        self.commands.push(Command::SetStyle { s: self.style_id });
+        self.commands.push(Command::SetLineMetrics {
+            height: self.line_height,
+            baseline: self.baseline,
+        });
+        self.cursor = Point::new(0, 0);
+    }
+}
+
+pub struct ParagraphBuilder<'a, S: FontStyle, F: Fonts<Style = S>> {
+    builder: Builder<S, F>,
+
+    // Current style.
+    style: S,
+    /// Style ID.
+    style_id: u16,
+    /// Whitespace width.
+    whitespace_width: f32,
+    /// Whitespace stretch.
+    whitespace_stretch: f32,
+    /// Whitespace shrink.
+    whitespace_shrink: f32,
+
+    // Items
+    items: Vec<Item<Box<'a>, (), Penalty>>,
+}
+
+impl<'a, S: FontStyle, F: Fonts<Style = S>> ParagraphBuilder<'a, S, F> {
     pub fn set_style(&mut self, style: &Style) {
-        let (style, id) = self.get_style(style);
+        let (style, id) = self.builder.get_style(style);
         if id != self.style_id {
-            let line_height = style.line_height();
             self.whitespace_width = style.em_px() as f32 / 3.0;
             self.whitespace_stretch = self.whitespace_width / 2.0;
             self.whitespace_shrink = self.whitespace_width / 3.0;
 
-            self.commands.push(Command::SetStyle { s: id });
-            if line_height != self.line_height {
-                self.commands
-                    .push(Command::SetLineHeight { h: line_height });
-
-                self.line_height = line_height;
-            }
+            self.items.push(Item::Box {
+                width: 0.0,
+                data: Box::SetStyle {
+                    id,
+                    line_height: style.line_height(),
+                    baseline: style.baseline(),
+                },
+            });
 
             self.style = style;
             self.style_id = id;
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
     }
 
     pub fn indent(&mut self, size: f32) {
@@ -232,7 +322,7 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
         }
     }
 
-    pub fn paragraph_break(&mut self) {
+    fn paragraph_break(&mut self) {
         match self.items.len() {
             0 => return,
             1 => {
@@ -264,35 +354,56 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
         // Calculate line breaks.
         let breaks = KnuthPlass::new()
             .with_threshold(f32::INFINITY)
-            .layout_paragraph(&self.items, self.bounding_box.size.width as f32);
+            .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32);
+
+        // Line metrics
+        let mut current_line_height = self.builder.line_height;
+        let mut current_baseline = self.builder.baseline;
 
         // Paginate.
         let mut item = 0;
         for b in breaks {
             let items = &self.items[item..=b.break_at];
 
-            if self.commands.is_empty() {
-                self.commands.push(Command::SetLineHeight {
-                    h: self.line_height,
-                });
-            }
-
-            self.commands.push(Command::SetAdjustmentRatio {
-                r: b.adjustment_ratio,
-            });
+            let mut commands = Vec::new();
 
             // TODO: error diffusion for glue
+            let mut any_text = false;
+            let mut push_line_metrics = false;
             if !items.is_empty() {
                 let mut text = String::new();
                 for i in items.iter().take(items.len() - 1) {
                     match i {
                         Item::Box {
-                            data: Box::Indent, ..
+                            data:
+                                Box::SetStyle {
+                                    id,
+                                    line_height,
+                                    baseline,
+                                },
+                            ..
+                        } => {
+                            if !text.is_empty() {
+                                commands.push(Command::Show { str: text });
+                                text = String::new();
+                                any_text = true;
+                            }
+                            commands.push(Command::SetStyle { s: *id });
+
+                            if !any_text && *line_height != current_line_height
+                                || *line_height > current_line_height
+                            {
+                                current_line_height = *line_height;
+                                current_baseline = *baseline;
+                                push_line_metrics = true;
+                            }
+                        }
+                        Item::Box {
+                            width,
+                            data: Box::Indent,
                         } => {
                             assert!(text.is_empty());
-                            self.commands.push(Command::Advance {
-                                dx: (self.whitespace_width * 4.0) as u16,
-                            });
+                            commands.push(Command::Advance { dx: *width as u16 });
                         }
                         Item::Box {
                             data: Box::Word { text: word },
@@ -319,10 +430,27 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
                 {
                     text.push('-');
                 }
-                self.commands.push(Command::Show { str: text });
+                if !text.is_empty() {
+                    commands.push(Command::Show { str: text });
+                }
+
+                if push_line_metrics {
+                    self.builder.commands.push(Command::SetLineMetrics {
+                        height: current_line_height,
+                        baseline: current_baseline,
+                    });
+                }
+
+                self.builder.commands.push(Command::SetAdjustmentRatio {
+                    r: b.adjustment_ratio,
+                });
+                self.builder.commands.append(&mut commands);
+
+                self.builder.line_height = current_line_height;
+                self.builder.baseline = current_baseline;
             }
 
-            self.advance_line();
+            self.builder.advance_line();
 
             item = b.break_at + 1;
         }
@@ -330,23 +458,15 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> Builder<'a, S, F> {
         self.items.clear();
     }
 
-    pub fn advance_line(&mut self) {
-        let remaining = self.bounding_box.size.height as i32 - self.cursor.y;
-        if remaining < self.line_height as i32 {
-            self.page_break();
-        } else {
-            self.commands.push(Command::LineBreak);
-            self.cursor += Point::new(0, self.line_height as i32);
-        }
-    }
+    pub fn finish(mut self) -> Builder<S, F> {
+        self.paragraph_break();
 
-    pub fn page_break(&mut self) {
-        self.commands.push(Command::PageBreak);
-        self.pages += 1;
-        self.commands.push(Command::SetLineHeight {
-            h: self.line_height,
-        });
-        self.commands.push(Command::SetStyle { s: self.style_id });
-        self.cursor = Point::new(0, 0);
+        self.builder.style = self.style;
+        self.builder.style_id = self.style_id;
+        self.builder.whitespace_width = self.whitespace_width;
+        self.builder.whitespace_stretch = self.whitespace_stretch;
+        self.builder.whitespace_shrink = self.whitespace_shrink;
+
+        self.builder
     }
 }

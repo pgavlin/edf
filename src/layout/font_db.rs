@@ -114,14 +114,18 @@ where
         let pixels_per_em: f32 = style.em_px.into();
         let units_per_em: f32 = face.units_per_em().into();
         let pixels_per_unit = pixels_per_em / units_per_em;
-        let line_units: f32 = (face.ascender() - face.descender() + face.line_gap()).into();
-        let line_height_px: u16 = unsafe { (line_units * pixels_per_unit).to_int_unchecked() };
+        let line_units: i16 = face.ascender() - face.descender() + face.line_gap();
+        let line_height_px: u16 =
+            unsafe { (line_units as f32 * pixels_per_unit).to_int_unchecked() };
+        let baseline_px: u16 =
+            unsafe { ((line_units - face.ascender()) as f32 * pixels_per_unit).to_int_unchecked() };
 
         Some(FontStyle {
             fonts: self,
             font,
             size_px: style.em_px,
             line_height_px,
+            baseline_px,
         })
     }
 }
@@ -135,6 +139,7 @@ where
     font: &'a Font<'b>,
     size_px: u16,
     line_height_px: u16,
+    baseline_px: u16,
 }
 
 impl<'a, 'b> layout::FontStyle for FontStyle<'a, 'b>
@@ -168,6 +173,10 @@ where
 
     fn line_height(&self) -> u16 {
         self.line_height_px
+    }
+
+    fn baseline(&self) -> u16 {
+        self.baseline_px
     }
 }
 

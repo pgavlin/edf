@@ -1,5 +1,5 @@
 use crate::{
-    layout::{Builder, FontStyle, Fonts},
+    layout::{Builder, FontStyle, Fonts, ParagraphBuilder},
     Command, Header, Style,
 };
 
@@ -50,13 +50,33 @@ impl Options {
     }
 }
 
+enum BuilderState<'a, S: FontStyle, F: Fonts<Style = S>> {
+    None,
+    Doc(Builder<S, F>),
+    Paragraph(ParagraphBuilder<'a, S, F>),
+}
+
+impl<'a, S: FontStyle, F: Fonts<Style = S>> BuilderState<'a, S, F> {
+    fn map<Fn: FnOnce(Self) -> Self>(&mut self, f: Fn) {
+        let next = f(core::mem::replace(self, BuilderState::None));
+        let _ = core::mem::replace(self, next);
+    }
+
+    fn paragraph(&mut self) -> &mut ParagraphBuilder<'a, S, F> {
+        match self {
+            BuilderState::Paragraph(ref mut p) => p,
+            _ => panic!("builder is not in a paragraph"),
+        }
+    }
+}
+
 /// Context used to lay out markdown.
 #[allow(clippy::struct_excessive_bools)]
 struct LayoutContext<'a, S: FontStyle, F: Fonts<Style = S>> {
     events: &'a [Event],
     bytes: &'a [u8],
     options: Options,
-    builder: Builder<'a, S, F>,
+    builder: BuilderState<'a, S, F>,
     heading_level: u8,
     character_reference_marker: u8,
     // Current event index.
@@ -66,17 +86,12 @@ struct LayoutContext<'a, S: FontStyle, F: Fonts<Style = S>> {
 
 impl<'a, S: FontStyle, F: Fonts<Style = S>> LayoutContext<'a, S, F> {
     /// Create a new layout context.
-    fn new(
-        events: &'a [Event],
-        bytes: &'a [u8],
-        options: Options,
-        builder: Builder<'a, S, F>,
-    ) -> Self {
+    fn new(events: &'a [Event], bytes: &'a [u8], options: Options, builder: Builder<S, F>) -> Self {
         LayoutContext {
             events,
             bytes,
             options,
-            builder,
+            builder: BuilderState::Doc(builder),
             heading_level: 0,
             character_reference_marker: 0,
             index: 0,
@@ -107,7 +122,12 @@ pub fn build<S: FontStyle, F: Fonts<Style = S>>(
         index += 1;
     }
 
-    Ok(context.builder.finish())
+    let builder = match context.builder {
+        BuilderState::Paragraph(p) => p.finish(),
+        BuilderState::Doc(b) => b,
+        _ => panic!("unexpected state"),
+    };
+    Ok(builder.finish())
 }
 
 /// Handle the event at `index`.
@@ -170,7 +190,7 @@ fn enter<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         // Push bold style.
         Name::Emphasis => {
             if let Some(ref style) = context.options.emphasis {
-                context.builder.set_style(style);
+                context.builder.paragraph().set_style(style);
             }
         }
 
@@ -184,7 +204,7 @@ fn enter<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         // Push bold style.
         Name::Strong => {
             if let Some(ref style) = context.options.strong {
-                context.builder.set_style(style);
+                context.builder.paragraph().set_style(style);
             }
         }
 
@@ -258,7 +278,10 @@ fn exit<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         // Emphasis
         //
         // Pop bold style.
-        Name::Emphasis => context.builder.set_style(&context.options.regular),
+        Name::Emphasis => context
+            .builder
+            .paragraph()
+            .set_style(&context.options.regular),
 
         // Hard breaks
         //
@@ -283,7 +306,10 @@ fn exit<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
         // Strong
         //
         // Pop bold style.
-        Name::Strong => context.builder.set_style(&context.options.regular),
+        Name::Strong => context
+            .builder
+            .paragraph()
+            .set_style(&context.options.regular),
 
         // Line endings
         Name::LineEnding => on_exit_line_ending(context),
@@ -307,16 +333,22 @@ fn on_exit_atx_heading_sequence<S: FontStyle, F: Fonts<Style = S>>(
 fn on_enter_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     // Start a new paragraph.
     context.in_paragraph = true;
-    assert!(context.builder.paragraph_len() == 0);
 
-    if context.builder.page_count() != 0 {
-        context.builder.page_break();
-    }
+    context.builder.map(|b| match b {
+        BuilderState::Doc(mut doc) => {
+            if !doc.is_empty() {
+                doc.page_break();
+            }
+            BuilderState::Paragraph(doc.paragraph())
+        }
+        _ => panic!("expected a document builder"),
+    });
 
     if let Some(ref heading) = context.options.heading {
         if (context.heading_level as usize) < heading.len() {
             context
                 .builder
+                .paragraph()
                 .set_style(&heading[context.heading_level as usize]);
         }
     }
@@ -324,22 +356,36 @@ fn on_enter_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutConte
 
 fn on_exit_heading<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     context.in_paragraph = false;
-    context.builder.paragraph_break();
-    context.builder.advance_line();
-    context.builder.set_style(&context.options.regular);
+    context.builder.map(|b| match b {
+        BuilderState::Paragraph(p) => {
+            let mut doc = p.finish();
+            doc.advance_line();
+            doc.set_style(&context.options.regular);
+            BuilderState::Doc(doc)
+        }
+        _ => panic!("expected a paragraph builder"),
+    });
 }
 
 fn on_enter_paragraph<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     // Start a new paragraph and push an indent.
     context.in_paragraph = true;
-    assert!(context.builder.paragraph_len() == 0);
 
-    context.builder.indent(4.0);
+    context.builder.map(|b| match b {
+        BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph()),
+        _ => panic!("expected a document builder"),
+    });
+
+    context.builder.paragraph().indent(4.0);
 }
 
 fn on_exit_paragraph<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     context.in_paragraph = false;
-    context.builder.paragraph_break();
+
+    context.builder.map(|b| match b {
+        BuilderState::Paragraph(p) => BuilderState::Doc(p.finish()),
+        _ => panic!("expected a paragraph builder"),
+    });
 }
 
 fn on_exit_thematic_break<S: FontStyle, F: Fonts<Style = S>>(_context: &mut LayoutContext<S, F>) {
@@ -355,7 +401,7 @@ fn on_exit_autolink<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutConte
 fn on_exit_data<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     let event_pos = SlicePosition::from_exit_event(context.events, context.index);
     let slice = Slice::from_position(context.bytes, &event_pos);
-    context.builder.text(slice.as_str());
+    context.builder.paragraph().text(slice.as_str());
 }
 
 fn on_exit_character_reference<S: FontStyle, F: Fonts<Style = S>>(
@@ -366,13 +412,15 @@ fn on_exit_character_reference<S: FontStyle, F: Fonts<Style = S>>(
     match context.character_reference_marker {
         b'#' => context
             .builder
+            .paragraph()
             .char(decode_numeric_char(slice.as_str(), 10)),
         b'x' => context
             .builder
+            .paragraph()
             .char(decode_numeric_char(slice.as_str(), 16)),
         b'&' => {
             if let Some(v) = decode_named_char(slice.as_str()) {
-                context.builder.word(v);
+                context.builder.paragraph().word(v);
             }
         }
         _ => unreachable!("Unexpected marker `{}`", context.character_reference_marker),
@@ -380,12 +428,12 @@ fn on_exit_character_reference<S: FontStyle, F: Fonts<Style = S>>(
 }
 
 fn on_exit_hard_break<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
-    context.builder.hard_line_break();
+    context.builder.paragraph().hard_line_break();
 }
 
 fn on_exit_line_ending<S: FontStyle, F: Fonts<Style = S>>(context: &mut LayoutContext<S, F>) {
     if context.in_paragraph {
-        context.builder.soft_line_break();
+        context.builder.paragraph().soft_line_break();
     }
 }
 

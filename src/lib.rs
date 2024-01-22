@@ -23,8 +23,8 @@ pub struct Trailer {
     pub pages: Vec<u32>,
 }
 
-#[derive(Debug)]
-pub enum Command<S> {
+#[derive(Debug, Clone)]
+pub enum Command<S: Clone> {
     /// No-op.
     Nop,
     /// Move the cursor `tab_stop` points in the current text direction.
@@ -46,8 +46,8 @@ pub enum Command<S> {
     SetStyle { s: u16 },
     /// Sets the current whitespace adjustment ratio to the given amount
     SetAdjustmentRatio { r: f32 },
-    /// Sets the current line height.
-    SetLineHeight { h: u16 },
+    /// Sets the current line metrics.
+    SetLineMetrics { height: u16, baseline: u16 },
     /// Ends the command stream.
     End,
 }
@@ -228,8 +228,12 @@ pub mod read {
             }
             0x85 => {
                 let mut r = io::Cursor::new(source);
-                let h: u16 = leb128::read::unsigned(&mut r)?.try_into()?;
-                (Command::SetLineHeight { h }, r.position() as usize)
+                let height: u16 = leb128::read::unsigned(&mut r)?.try_into()?;
+                let baseline: u16 = leb128::read::unsigned(&mut r)?.try_into()?;
+                (
+                    Command::SetLineMetrics { height, baseline },
+                    r.position() as usize,
+                )
             }
             0xbf => (Command::End, 0),
             _ => return Err(Error::InvalidCommand),
@@ -308,7 +312,7 @@ pub mod write {
         Ok(n)
     }
 
-    fn encode_pages<W: io::Write, S: AsRef<str>>(
+    fn encode_pages<W: io::Write, S: AsRef<str> + Clone>(
         w: &mut W,
         at: usize,
         pages: &[Command<S>],
@@ -344,8 +348,10 @@ pub mod write {
                 Command::SetAdjustmentRatio { r } => {
                     n += write_all(w, &[0x84])? + write_all(w, &r.to_le_bytes())?;
                 }
-                Command::SetLineHeight { h } => {
-                    n += write_all(w, &[0x85])? + leb128::write::unsigned(w, *h as u64)?;
+                Command::SetLineMetrics { height, baseline } => {
+                    n += write_all(w, &[0x85])?
+                        + leb128::write::unsigned(w, *height as u64)?
+                        + leb128::write::unsigned(w, *baseline as u64)?;
                 }
                 _ => {}
             };
@@ -368,7 +374,7 @@ pub mod write {
         Ok(n)
     }
 
-    pub fn doc<W: io::Write, S: AsRef<str>>(
+    pub fn doc<W: io::Write, S: AsRef<str> + Clone>(
         w: &mut W,
         h: &Header,
         pages: &[Command<S>],
