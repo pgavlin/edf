@@ -26,7 +26,7 @@ jobs:
         override: true
 
     - name: Install SDL2
-      run: apt install libsdl2-dev
+      run: sudo apt install libsdl2-dev
 
     - name: Build std
       run: cargo build
