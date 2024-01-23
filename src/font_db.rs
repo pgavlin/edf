@@ -1,13 +1,24 @@
-use crate::{layout, Style};
+use crate::{fonts, Style};
+
+#[cfg(feature = "layout")]
+use crate::layout;
+
+#[cfg(feature = "layout")]
+use embedded_graphics::{geometry::Size, primitives::rectangle::Rectangle};
+
+#[cfg(feature = "display")]
+use crate::display;
+
+#[cfg(feature = "display")]
+use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Gray8, Pixel};
+
+#[cfg(any(feature = "layout", feature = "display"))]
+use embedded_graphics::geometry::Point;
 
 extern crate alloc;
 use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
 use core::num::NonZeroUsize;
-use embedded_graphics::{
-    geometry::{Point, Size},
-    primitives::rectangle::Rectangle,
-};
 use hashbrown::HashMap;
 use lru::LruCache;
 use ttf_parser::{Face, FaceParsingError, OutlineBuilder};
@@ -20,22 +31,23 @@ struct GlyphCacheKey {
     code_point: char,
 }
 
-struct Glyph {
-    placement: Placement,
+pub struct Glyph {
+    pub placement: Placement,
+    pub data: Vec<u8>,
 }
 
-struct Font<'a> {
+struct Font<'data> {
     id: usize,
-    name: &'a str,
-    face: Face<'a>,
+    name: &'data str,
+    face: Face<'data>,
 }
 
-pub struct Fonts<'a> {
-    fonts: HashMap<&'a str, Font<'a>>,
+pub struct Fonts<'data> {
+    fonts: HashMap<&'data str, Font<'data>>,
     glyph_cache: RefCell<LruCache<GlyphCacheKey, Glyph>>,
 }
 
-impl<'a> Fonts<'a> {
+impl<'data> Fonts<'data> {
     pub fn new(glyph_cache_size: NonZeroUsize) -> Self {
         Fonts {
             fonts: HashMap::new(),
@@ -43,7 +55,7 @@ impl<'a> Fonts<'a> {
         }
     }
 
-    pub fn add(&mut self, name: &'a str, data: &'a [u8]) -> Result<usize, FaceParsingError> {
+    pub fn add(&mut self, name: &'data str, data: &'data [u8]) -> Result<usize, FaceParsingError> {
         let id = self.fonts.len();
         self.fonts.insert(
             name,
@@ -61,6 +73,7 @@ impl<'a> Fonts<'a> {
             None => {
                 return Glyph {
                     placement: Default::default(),
+                    data: Vec::new(),
                 }
             }
             Some(id) => id,
@@ -70,18 +83,19 @@ impl<'a> Fonts<'a> {
         if font.face.outline_glyph(glyph_id, &mut path).is_none() {
             return Glyph {
                 placement: Default::default(),
+                data: Vec::new(),
             };
         }
 
         let units_per_em: f32 = font.face.units_per_em().into();
         let pixels_per_unit = pixels_per_em / units_per_em;
 
-        let (_, placement) = Mask::new(&path.commands)
+        let (data, placement) = Mask::new(&path.commands)
             .origin(Origin::TopLeft)
             .transform(Some(Transform::scale(pixels_per_unit, pixels_per_unit)))
             .render();
 
-        Glyph { placement }
+        Glyph { placement, data }
     }
 
     fn glyph(&self, style: &FontStyle, code_point: char) -> RefMut<Glyph> {
@@ -96,15 +110,11 @@ impl<'a> Fonts<'a> {
             })
         })
     }
-}
 
-impl<'a, 'b> layout::Fonts for &'a Fonts<'b>
-where
-    'b: 'a,
-{
-    type Style = FontStyle<'a, 'b>;
-
-    fn get_style(&self, style: &Style) -> Option<Self::Style> {
+    pub fn get_style<'s>(&'s self, style: &Style) -> Option<FontStyle<'s, 'data>>
+    where
+        'data: 's,
+    {
         let font = match self.fonts.get(style.font_name.as_str()) {
             None => return None,
             Some(f) => f,
@@ -130,6 +140,30 @@ where
     }
 }
 
+#[cfg(feature = "layout")]
+impl<'a, 'b> layout::Fonts for &'a Fonts<'b>
+where
+    'b: 'a,
+{
+    type Style = FontStyle<'a, 'b>;
+
+    fn get_style(&self, style: &Style) -> Option<Self::Style> {
+        Fonts::get_style(self, style)
+    }
+}
+
+#[cfg(feature = "display")]
+impl<'a, 'b> display::Fonts for &'a Fonts<'b>
+where
+    'b: 'a,
+{
+    type Style = FontStyle<'a, 'b>;
+
+    fn get_style(&self, style: &Style) -> Option<Self::Style> {
+        Fonts::get_style(self, style)
+    }
+}
+
 #[derive(Clone)]
 pub struct FontStyle<'a, 'b>
 where
@@ -142,7 +176,16 @@ where
     baseline_px: u16,
 }
 
-impl<'a, 'b> layout::FontStyle for FontStyle<'a, 'b>
+impl<'a, 'b> FontStyle<'a, 'b>
+where
+    'b: 'a,
+{
+    pub fn glyph(&self, code_point: char) -> RefMut<Glyph> {
+        self.fonts.glyph(self, code_point)
+    }
+}
+
+impl<'a, 'b> fonts::FontStyle for FontStyle<'a, 'b>
 where
     'b: 'a,
 {
@@ -154,6 +197,20 @@ where
         self.size_px
     }
 
+    fn line_height(&self) -> u16 {
+        self.line_height_px
+    }
+
+    fn baseline(&self) -> u16 {
+        self.baseline_px
+    }
+}
+
+#[cfg(feature = "layout")]
+impl<'a, 'b> layout::FontStyle for FontStyle<'a, 'b>
+where
+    'b: 'a,
+{
     fn measure_string(&self, text: &str) -> layout::TextMetrics {
         let origin = Point::new(0, 0);
         let mut cursor = origin;
@@ -170,13 +227,47 @@ where
         );
         layout::TextMetrics { bounding_box }
     }
+}
 
-    fn line_height(&self) -> u16 {
-        self.line_height_px
+#[cfg(feature = "display")]
+impl<'a, 'b> display::FontStyle for FontStyle<'a, 'b>
+where
+    'b: 'a,
+{
+    fn glyph_advance(&self, c: char) -> i32 {
+        let glyph = self.fonts.glyph(self, c);
+        glyph.placement.left + glyph.placement.width as i32
     }
 
-    fn baseline(&self) -> u16 {
-        self.baseline_px
+    fn draw_glyph<Draw: DrawTarget<Color = Gray8>>(
+        &self,
+        draw: &mut Draw,
+        origin: Point,
+        c: char,
+    ) -> Result<Point, Draw::Error> {
+        let glyph = self.fonts.glyph(self, c);
+        let glyph_origin = origin + Point::new(glyph.placement.left, -glyph.placement.top);
+
+        let mut data = &glyph.data[..];
+        for y in 0..glyph.placement.height {
+            let row = &data[..(glyph.placement.width as usize)];
+
+            let pixels = row.iter().enumerate().map(|(x, luma)| {
+                Pixel(
+                    Point::new(glyph_origin.x + x as i32, glyph_origin.y - y as i32),
+                    Gray8::new(*luma),
+                )
+            });
+
+            draw.draw_iter(pixels)?;
+
+            data = &data[(glyph.placement.width as usize)..];
+        }
+
+        Ok(Point::new(
+            glyph_origin.x + glyph.placement.width as i32,
+            origin.y,
+        ))
     }
 }
 

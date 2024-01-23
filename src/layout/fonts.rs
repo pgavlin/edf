@@ -11,12 +11,6 @@ pub trait Fonts {
     fn get_style(&self, style: &Style) -> Option<Self::Style>;
 }
 
-pub trait FontStyle: Clone {
-    fn font_name(&self) -> &str;
-    fn em_px(&self) -> u16;
-
-    fn line_height(&self) -> u16;
-    fn baseline(&self) -> u16;
-
+pub trait FontStyle: crate::fonts::FontStyle {
     fn measure_string(&self, text: &str) -> TextMetrics;
 }

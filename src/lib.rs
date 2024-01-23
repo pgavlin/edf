@@ -4,8 +4,16 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use core::convert::AsRef;
 
+pub mod fonts;
+
+#[cfg(feature = "font_db")]
+pub mod font_db;
+
 #[cfg(feature = "layout")]
 pub mod layout;
+
+#[cfg(feature = "display")]
+pub mod display;
 
 mod leb128;
 

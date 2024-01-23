@@ -132,6 +132,10 @@ impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
             self.style_id = id;
 
             self.commands.push(Command::SetStyle { s: id });
+            self.commands.push(Command::SetLineMetrics {
+                height: self.line_height,
+                baseline: self.baseline,
+            });
         }
     }
 
