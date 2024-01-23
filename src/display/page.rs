@@ -89,6 +89,7 @@ impl<S: FontStyle> TextRenderer for &CharacterStyle<S> {
 pub fn page<Draw, S, F, T>(
     draw: &mut Draw,
     origin: Point,
+    debug: bool,
     fonts: F,
     default_style: S,
     header: &Header,
@@ -114,13 +115,15 @@ pub fn page<Draw, S, F, T>(
     let mut error = 0f32;
 
     for command in page {
-        let _ = Triangle::new(
-            cursor,
-            cursor + Point::new(-3, -7),
-            cursor + Point::new(3, -7),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(Gray8::WHITE, 1))
-        .draw(draw);
+        if debug {
+            let _ = Triangle::new(
+                cursor,
+                cursor + Point::new(-3, -7),
+                cursor + Point::new(3, -7),
+            )
+            .into_styled(PrimitiveStyle::with_stroke(Gray8::WHITE, 1))
+            .draw(draw);
+        }
 
         match command {
             Command::LineBreak => {

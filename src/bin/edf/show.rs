@@ -3,9 +3,11 @@ use edf::{display, font_db};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::{GrayColor, Gray8},
+    pixelcolor::{Gray8, GrayColor},
 };
-use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window, sdl2::Keycode};
+use embedded_graphics_simulator::{
+    sdl2::Keycode, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
+};
 use std::cmp;
 use std::collections::HashMap;
 use std::error::Error;
@@ -51,6 +53,7 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
     let mut sim =
         SimulatorDisplay::<Gray8>::new(Size::new(device_config.width_px, device_config.height_px));
 
+    let mut debug = false;
     let mut page_num = args.page_num as usize;
     let offset = trailer.pages[args.page_num as usize - 1];
     let page = edf::read::page(&header, &bytes[offset as usize..])?;
@@ -62,6 +65,7 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
     display::page(
         &mut sim,
         origin,
+        debug,
         &fonts,
         default_style.clone(),
         &header,
@@ -81,23 +85,25 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
                     match keycode {
                         Keycode::D => page_num = cmp::min(page_num + 1, trailer.pages.len()),
                         Keycode::A => page_num = cmp::max(1, page_num - 1),
+                        Keycode::S => debug = !debug,
                         _ => continue,
                     }
 
                     let _ = sim.clear(Gray8::BLACK);
 
-                    let offset = trailer.pages[page_num as usize - 1];
+                    let offset = trailer.pages[page_num - 1];
                     let page = edf::read::page(&header, &bytes[offset as usize..])?;
                     display::page(
                         &mut sim,
                         origin,
+                        debug,
                         &fonts,
                         default_style.clone(),
                         &header,
                         &page,
                     );
                 }
-                _ => {},
+                _ => {}
             }
         }
     }
