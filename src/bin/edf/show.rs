@@ -1,10 +1,12 @@
 use crate::{common::*, io::Input, ShowArgs};
 use edf::{display, font_db};
 use embedded_graphics::{
+    draw_target::DrawTarget,
     geometry::{Point, Size},
-    pixelcolor::Gray8,
+    pixelcolor::{GrayColor, Gray8},
 };
-use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, Window};
+use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window, sdl2::Keycode};
+use std::cmp;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -29,12 +31,6 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
     edf::read::seek_trailer(&mut cursor)?;
     let trailer = edf::read::trailer(&mut cursor)?;
 
-    let mut sim =
-        SimulatorDisplay::<Gray8>::new(Size::new(device_config.width_px, device_config.height_px));
-
-    let offset = trailer.pages[args.page_num as usize - 1];
-    let page = edf::read::page(&header, &bytes[offset as usize..])?;
-
     let font_data = match args.font_config {
         Some(cfg) => {
             let font_dir = Path::new(&cfg).parent().unwrap_or(Path::new("/"));
@@ -52,20 +48,59 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
         Some(s) => s,
     };
 
+    let mut sim =
+        SimulatorDisplay::<Gray8>::new(Size::new(device_config.width_px, device_config.height_px));
+
+    let mut page_num = args.page_num as usize;
+    let offset = trailer.pages[args.page_num as usize - 1];
+    let page = edf::read::page(&header, &bytes[offset as usize..])?;
+    let origin = Point::new(
+        device_config.left_margin_px as i32,
+        device_config.top_margin_px as i32,
+    );
+
     display::page(
         &mut sim,
-        Point::new(
-            device_config.left_margin_px as i32,
-            device_config.top_margin_px as i32,
-        ),
+        origin,
         &fonts,
-        default_style,
+        default_style.clone(),
         &header,
         &page,
     );
 
     let output_settings = OutputSettingsBuilder::new().build();
-    Window::new(&format!("Page {}", args.page_num), &output_settings).show_static(&sim);
+    let mut window = Window::new("edf", &output_settings);
+
+    'main: loop {
+        window.update(&sim);
+
+        for event in window.events() {
+            match event {
+                SimulatorEvent::Quit => break 'main,
+                SimulatorEvent::KeyUp { keycode, .. } => {
+                    match keycode {
+                        Keycode::D => page_num = cmp::min(page_num + 1, trailer.pages.len()),
+                        Keycode::A => page_num = cmp::max(1, page_num - 1),
+                        _ => continue,
+                    }
+
+                    let _ = sim.clear(Gray8::BLACK);
+
+                    let offset = trailer.pages[page_num as usize - 1];
+                    let page = edf::read::page(&header, &bytes[offset as usize..])?;
+                    display::page(
+                        &mut sim,
+                        origin,
+                        &fonts,
+                        default_style.clone(),
+                        &header,
+                        &page,
+                    );
+                }
+                _ => {},
+            }
+        }
+    }
 
     Ok(())
 }

@@ -105,8 +105,8 @@ pub fn page<Draw, S, F, T>(
     let mut glue_stretch = glue_width / 2.0;
     let mut glue_shrink = glue_width / 3.0;
 
-    let mut line_height = 0;
-    let mut line_baseline = 0;
+    let mut line_height = style.line_height() as i32;
+    let mut line_baseline = style.baseline() as i32;
     let mut baseline_offset = 0;
     let mut cursor = origin;
     let mut whitespace_width = 0.0;
