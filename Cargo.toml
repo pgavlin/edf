@@ -25,7 +25,7 @@ std = ["no_std_io/std", "dep:clap", "dep:serde", "dep:toml", "dep:embedded-graph
 layout = ["dep:hashbrown", "dep:lru", "dep:markdown", "dep:text_layout", "dep:ttf-parser", "dep:unicode-segmentation", "dep:zeno"]
 libm = ["dep:libm", "zeno/libm"]
 font_db = ["dep:hashbrown", "dep:lru", "dep:ttf-parser", "dep:zeno"]
-display = ["dep:hashbrown", "dep:lru", "dep:ttf-parser", "dep:zeno"]
+display = []
 
 [[bin]]
 name = "edf"
