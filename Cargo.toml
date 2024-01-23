@@ -22,7 +22,7 @@ zeno = { version = "0.3.0", optional = true }
 [features]
 default = ["std", "layout", "display", "font_db"]
 std = ["no_std_io/std", "dep:clap", "dep:serde", "dep:toml", "dep:embedded-graphics-simulator"]
-layout = ["dep:hashbrown", "dep:lru", "dep:markdown", "dep:text_layout", "dep:ttf-parser", "dep:unicode-segmentation", "dep:zeno"]
+layout = ["dep:markdown", "dep:text_layout", "dep:unicode-segmentation"]
 libm = ["dep:libm", "zeno/libm"]
 font_db = ["dep:hashbrown", "dep:lru", "dep:ttf-parser", "dep:zeno"]
 display = []
