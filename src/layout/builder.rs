@@ -401,6 +401,15 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
             .with_threshold(f32::INFINITY)
             .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32);
 
+        let breaks = if breaks.is_empty() {
+            FirstFit::new()
+                .with_threshold(f32::INFINITY)
+                .allow_overflow(true)
+                .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32)
+        } else {
+            breaks
+        };
+
         if breaks.is_empty() {
             for i in &self.items {
                 println!("{:?}", i);
