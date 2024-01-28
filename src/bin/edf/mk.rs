@@ -4,6 +4,7 @@ use crate::{
     MkArgs, MkFormat,
 };
 use edf::{font_db::Fonts, layout};
+use hyphenation::{Hyphenator, Language, Load, Standard};
 use markdown::*;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -12,6 +13,16 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::Path;
+
+struct StandardHyphenator(Standard);
+
+impl layout::Hyphenator for &StandardHyphenator {
+    fn hyphenate(&self, word: &str, breaks: &mut Vec<usize>) {
+        let hyphenated = self.0.hyphenate(word);
+        breaks.clear();
+        breaks.extend(hyphenated.breaks);
+    }
+}
 
 #[derive(Deserialize)]
 struct MarkdownConfig {
@@ -37,6 +48,7 @@ fn mk_markdown<R: Read, W: Write>(
     input: &mut R,
     output: &mut W,
     fonts: &Fonts,
+    hyphenator: &StandardHyphenator,
     device_config: &DeviceConfig,
     markdown_config: MarkdownConfig,
 ) -> Result<(), Box<dyn Error>> {
@@ -51,6 +63,7 @@ fn mk_markdown<R: Read, W: Write>(
         state.bytes,
         device_config.bounding_box(),
         fonts,
+        hyphenator,
         markdown_config.into_device_options(device_config),
     ) {
         Ok(ok) => ok,
@@ -87,6 +100,8 @@ pub fn mk(args: MkArgs) -> Result<(), Box<dyn Error>> {
         Some(path) => Output::File(File::create(path)?),
     };
 
+    let hyphenator = StandardHyphenator(Standard::from_embedded(Language::EnglishUS)?);
+
     let format = match args.format {
         Some(f) => f,
         None => MkFormat::Markdown,
@@ -105,7 +120,14 @@ pub fn mk(args: MkArgs) -> Result<(), Box<dyn Error>> {
                     heading: None,
                 },
             };
-            mk_markdown(&mut input, &mut output, &fonts, &device_config, config)
+            mk_markdown(
+                &mut input,
+                &mut output,
+                &fonts,
+                &hyphenator,
+                &device_config,
+                config,
+            )
         }
     }
 }

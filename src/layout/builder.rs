@@ -9,6 +9,16 @@ use embedded_graphics::{geometry::Point, primitives::Rectangle};
 use text_layout::*;
 use unicode_segmentation::UnicodeSegmentation;
 
+pub trait Hyphenator {
+    fn hyphenate(&self, word: &str, breaks: &mut Vec<usize>);
+}
+
+impl Hyphenator for () {
+    fn hyphenate(&self, _word: &str, breaks: &mut Vec<usize>) {
+        breaks.clear();
+    }
+}
+
 #[derive(Debug)]
 enum Box<'a> {
     Indent,
@@ -35,7 +45,7 @@ enum Penalty {
 
 // TODO: non-breaking spaces
 
-pub struct Builder<S: FontStyle, F: Fonts<Style = S>> {
+pub struct Builder<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> {
     // Static info.
     /// Bounding box.
     bounding_box: Rectangle,
@@ -43,6 +53,8 @@ pub struct Builder<S: FontStyle, F: Fonts<Style = S>> {
     fonts: F,
     /// Default style
     default_style: S,
+    /// Hyphenator
+    hyphenator: H,
 
     // Current style.
     style: S,
@@ -70,9 +82,9 @@ pub struct Builder<S: FontStyle, F: Fonts<Style = S>> {
     pages: usize,
 }
 
-impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
+impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
     /// Create a new document builder.
-    pub fn new(bounding_box: Rectangle, fonts: F, default_style: S) -> Self {
+    pub fn new(bounding_box: Rectangle, fonts: F, default_style: S, hyphenator: H) -> Self {
         let styles = vec![Style {
             font_name: String::from(default_style.font_name()),
             em_px: default_style.em_px(),
@@ -90,6 +102,7 @@ impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
             bounding_box,
             fonts,
             default_style: default_style.clone(),
+            hyphenator,
             style: default_style,
             style_id: 0,
             line_height,
@@ -149,14 +162,14 @@ impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.pages == 0
+        self.commands.is_empty()
     }
 
     pub fn page_count(&self) -> usize {
         self.pages
     }
 
-    pub fn paragraph<'a>(self) -> ParagraphBuilder<'a, S, F> {
+    pub fn paragraph<'a>(self) -> ParagraphBuilder<'a, S, F, H> {
         let style = self.style.clone();
         let style_id = self.style_id;
         let whitespace_width = self.whitespace_width;
@@ -170,6 +183,7 @@ impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
             whitespace_width,
             whitespace_stretch,
             whitespace_shrink,
+            breaks: Vec::new(),
             items: Vec::new(),
         }
     }
@@ -196,8 +210,8 @@ impl<S: FontStyle, F: Fonts<Style = S>> Builder<S, F> {
     }
 }
 
-pub struct ParagraphBuilder<'a, S: FontStyle, F: Fonts<Style = S>> {
-    builder: Builder<S, F>,
+pub struct ParagraphBuilder<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> {
+    builder: Builder<S, F, H>,
 
     // Current style.
     style: S,
@@ -210,11 +224,14 @@ pub struct ParagraphBuilder<'a, S: FontStyle, F: Fonts<Style = S>> {
     /// Whitespace shrink.
     whitespace_shrink: f32,
 
+    // Hyphenation buffer
+    breaks: Vec<usize>,
+
     // Items
     items: Vec<Item<Box<'a>, (), Penalty>>,
 }
 
-impl<'a, S: FontStyle, F: Fonts<Style = S>> ParagraphBuilder<'a, S, F> {
+impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, S, F, H> {
     pub fn set_style(&mut self, style: &Style) {
         let (style, id) = self.builder.get_style(style);
         if id != self.style_id {
@@ -287,6 +304,30 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> ParagraphBuilder<'a, S, F> {
         if is_whitespace {
             self.whitespace();
         } else {
+            self.builder.hyphenator.hyphenate(word, &mut self.breaks);
+            let word = if self.breaks.is_empty() {
+                word
+            } else {
+                let mut last = 0;
+                for offset in &self.breaks {
+                    let sub = &word[last..*offset];
+                    let metrics = self.style.measure_string(sub);
+                    let width = metrics.bounding_box.size.width;
+                    self.items.push(Item::Box {
+                        width: width as f32,
+                        data: Box::Word { text: sub },
+                    });
+                    self.items.push(Item::Penalty {
+                        width: 0.0,
+                        cost: 50.0,
+                        flagged: true,
+                        data: Penalty::SoftHyphen,
+                    });
+                    last = *offset;
+                }
+                &word[last..]
+            };
+
             let metrics = self.style.measure_string(word);
             let width = metrics.bounding_box.size.width;
             self.items.push(Item::Box {
@@ -359,6 +400,13 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> ParagraphBuilder<'a, S, F> {
         let breaks = KnuthPlass::new()
             .with_threshold(f32::INFINITY)
             .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32);
+
+        if breaks.is_empty() {
+            for i in &self.items {
+                println!("{:?}", i);
+            }
+            panic!("layout failed");
+        }
 
         // Line metrics
         let mut current_line_height = self.builder.line_height;
@@ -462,7 +510,7 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>> ParagraphBuilder<'a, S, F> {
         self.items.clear();
     }
 
-    pub fn finish(mut self) -> Builder<S, F> {
+    pub fn finish(mut self) -> Builder<S, F, H> {
         self.paragraph_break();
 
         self.builder.style = self.style;
