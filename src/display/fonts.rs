@@ -105,6 +105,17 @@ pub struct CharacterStyle<S, C> {
     pub color: C,
 }
 
+impl<S: FontStyle, C> CharacterStyle<S, C> {
+    pub fn new(style: S, color: C) -> Self {
+        let whitespace_px = style.em_px() / 3;
+        CharacterStyle {
+            style,
+            whitespace_px: whitespace_px.into(),
+            color,
+        }
+    }
+}
+
 impl<S: FontStyle, C: Color> TextRenderer for &CharacterStyle<S, C> {
     type Color = C;
 
