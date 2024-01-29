@@ -355,10 +355,7 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
     fn on_exit_atx_heading_sequence(context: &mut LayoutContext<S, F, H>) {
         let event_pos = SlicePosition::from_exit_event(context.events, context.index);
         let slice = Slice::from_position(context.bytes, &event_pos);
-        context.heading_level = match slice.as_str().len() {
-            0 => 0,
-            n => (n - 1) as u8,
-        };
+        context.heading_level = slice.as_str().len() as u8;
     }
 
     fn on_enter_heading(context: &mut LayoutContext<S, F, H>) {
@@ -376,11 +373,12 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
         });
 
         if let Some(ref heading) = context.options.heading {
-            if (context.heading_level as usize) < heading.len() {
+            let level = context.heading_level.saturating_sub(1) as usize;
+            if level < heading.len() {
                 context
                     .builder
                     .paragraph()
-                    .set_style(&heading[context.heading_level as usize]);
+                    .set_style(&heading[level]);
             }
         }
     }

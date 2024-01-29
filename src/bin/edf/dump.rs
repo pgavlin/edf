@@ -19,6 +19,8 @@ pub fn dump(args: DumpArgs) -> Result<(), Box<dyn Error>> {
     let trailer = edf::read::trailer(&mut cursor)?;
 
     println!("# Header");
+    println!("Title: ${:?}", header.title);
+    println!("Styles:");
     for style in &header.styles {
         println!("- `{style:?}`");
     }
