@@ -24,6 +24,7 @@ pub struct Style {
 }
 
 pub struct Header {
+    pub title: String,
     pub styles: Vec<Style>,
 }
 
@@ -154,6 +155,9 @@ pub mod read {
             return Err(Error::InvalidMagicNumber);
         }
 
+        // read title
+        let title = read_string(r)?;
+
         // read style vector
         let len: u32 = leb128::read::unsigned(r)?.try_into()?;
         let mut styles = Vec::new();
@@ -162,7 +166,7 @@ pub mod read {
             styles.push(read_style(r)?);
         }
 
-        Ok(Header { styles })
+        Ok(Header { title, styles })
     }
 
     pub fn seek_trailer<R: io::Read + io::Seek>(r: &mut R) -> Result<u64, Error> {
@@ -310,6 +314,9 @@ pub mod write {
         // write magic
         let magic = [0x0e, 0xdf, 0x01, 0x00];
         let mut n = write_all(w, &magic[..])?;
+
+        // write title
+        n += encode_string(w, h.title.as_str())?;
 
         // write style vector
         n += leb128::write::unsigned(w, h.styles.len() as u64)?;

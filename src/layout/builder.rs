@@ -1,6 +1,6 @@
 use crate::{
     layout::{FontStyle, Fonts},
-    Command, Header, Style,
+    Command, Style,
 };
 
 use alloc::string::String;
@@ -152,13 +152,8 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
         }
     }
 
-    pub fn finish(self) -> (Header, Vec<Command<String>>) {
-        (
-            Header {
-                styles: self.styles,
-            },
-            self.commands,
-        )
+    pub fn finish(self) -> (Vec<Style>, Vec<Command<String>>) {
+        (self.styles, self.commands)
     }
 
     pub fn is_empty(&self) -> bool {

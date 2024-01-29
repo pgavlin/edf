@@ -22,6 +22,7 @@ pub struct Options {
     emphasis: Option<Style>,
     strong: Option<Style>,
     heading: Option<Vec<Style>>,
+    title: Option<String>,
 }
 
 impl Options {
@@ -31,6 +32,7 @@ impl Options {
             emphasis: None,
             strong: None,
             heading: None,
+            title: None,
         }
     }
 
@@ -46,6 +48,11 @@ impl Options {
 
     pub fn with_heading(mut self, heading: Option<Vec<Style>>) -> Self {
         self.heading = heading;
+        self
+    }
+
+    pub fn with_title<S: AsRef<str>>(mut self, title: Option<S>) -> Self {
+        self.title = title.map(|s| s.as_ref().into());
         self
     }
 }
@@ -135,7 +142,10 @@ pub fn build<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>(
         BuilderState::Doc(b) => b,
         _ => panic!("unexpected state"),
     };
-    Ok(builder.finish())
+    let (styles, commands) = builder.finish();
+    let title = context.options.title.unwrap_or("Untitled".into());
+    let header = Header { styles, title };
+    Ok((header, commands))
 }
 
 struct Handlers<S, F, H> {
@@ -424,6 +434,10 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
             let event_pos = SlicePosition::from_exit_event(context.events, context.index);
             let slice = Slice::from_position(context.bytes, &event_pos);
             context.builder.paragraph().text(slice.as_str());
+
+            if context.heading_level == 1 && context.options.title.is_none() {
+                context.options.title = Some(slice.as_str().into());
+            }
         }
     }
 

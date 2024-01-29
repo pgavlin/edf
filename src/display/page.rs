@@ -1,90 +1,16 @@
 use crate::{
-    display::{FontStyle, Fonts},
+    display::{CharacterStyle, FontStyle, Fonts},
     Command, Header,
 };
 use core::convert::AsRef;
 use embedded_graphics::{
     draw_target::DrawTarget,
-    geometry::{Point, Size},
+    geometry::Point,
     pixelcolor::{Gray8, GrayColor},
-    primitives::{rectangle::Rectangle, triangle::Triangle, Primitive, PrimitiveStyle},
-    text::{
-        renderer::{TextMetrics, TextRenderer},
-        Baseline, Text,
-    },
+    primitives::{triangle::Triangle, Primitive, PrimitiveStyle},
+    text::Text,
     Drawable,
 };
-
-struct CharacterStyle<S> {
-    style: S,
-    whitespace_px: i32,
-}
-
-impl<S: FontStyle> TextRenderer for &CharacterStyle<S> {
-    type Color = Gray8;
-
-    fn draw_string<D: DrawTarget<Color = Gray8>>(
-        &self,
-        text: &str,
-        position: Point,
-        _baseline: Baseline,
-        target: &mut D,
-    ) -> Result<Point, D::Error> {
-        let mut origin = position;
-
-        // TODO: baseline
-
-        for c in text.chars() {
-            if c.is_whitespace() {
-                origin.x += self.whitespace_px;
-            } else {
-                origin = self.style.draw_glyph(target, origin, c)?;
-            }
-        }
-
-        Ok(origin)
-    }
-
-    fn draw_whitespace<D: DrawTarget<Color = Gray8>>(
-        &self,
-        width: u32,
-        position: Point,
-        _baseline: Baseline,
-        _target: &mut D,
-    ) -> Result<Point, D::Error> {
-        Ok(position + Point::new(width as i32, 0))
-    }
-
-    fn measure_string(&self, text: &str, position: Point, _baseline: Baseline) -> TextMetrics {
-        let mut origin = position;
-
-        // TODO: baseline
-
-        for c in text.chars() {
-            if c.is_whitespace() {
-                origin.x += self.whitespace_px;
-            } else {
-                origin.x += self.style.glyph_advance(c);
-            }
-        }
-
-        let bounding_box = Rectangle::new(
-            position,
-            Size::new(
-                (origin.x - position.x) as u32,
-                self.style.line_height() as u32,
-            ),
-        );
-        TextMetrics {
-            bounding_box,
-            next_position: origin,
-        }
-    }
-
-    fn line_height(&self) -> u32 {
-        self.style.line_height() as u32
-    }
-}
 
 pub fn page<Draw, S, F, T>(
     draw: &mut Draw,
@@ -162,6 +88,7 @@ pub fn page<Draw, S, F, T>(
                 let character_style = CharacterStyle {
                     style: style.clone(),
                     whitespace_px: whitespace_width_quantized,
+                    color: Gray8::WHITE,
                 };
                 for c in str.as_ref().chars() {
                     let (next_cursor, expected_width, can_charge) = if c.is_whitespace() {

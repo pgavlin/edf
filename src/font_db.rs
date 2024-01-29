@@ -10,7 +10,7 @@ use embedded_graphics::{geometry::Size, primitives::rectangle::Rectangle};
 use crate::display;
 
 #[cfg(feature = "display")]
-use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Gray8, Pixel};
+use embedded_graphics::draw_target::DrawTarget;
 
 #[cfg(any(feature = "layout", feature = "display"))]
 use embedded_graphics::geometry::Point;
@@ -24,16 +24,16 @@ use lru::LruCache;
 use ttf_parser::{Face, FaceParsingError, OutlineBuilder};
 use zeno::{Command, Mask, Origin, Placement, Transform, Vector};
 
+pub struct Glyph {
+    pub placement: Placement,
+    pub data: Vec<u8>,
+}
+
 #[derive(PartialEq, Eq, Hash)]
 struct GlyphCacheKey {
     font_id: usize,
     size_px: u16,
     code_point: char,
-}
-
-pub struct Glyph {
-    pub placement: Placement,
-    pub data: Vec<u8>,
 }
 
 struct Font<'data> {
@@ -239,35 +239,15 @@ where
         glyph.placement.left + glyph.placement.width as i32
     }
 
-    fn draw_glyph<Draw: DrawTarget<Color = Gray8>>(
+    fn draw_glyph<C: display::Color, Draw: DrawTarget<Color = C>>(
         &self,
         draw: &mut Draw,
         origin: Point,
+        color: C,
         c: char,
     ) -> Result<Point, Draw::Error> {
         let glyph = self.fonts.glyph(self, c);
-        let glyph_origin = origin + Point::new(glyph.placement.left, -glyph.placement.top);
-
-        let mut data = &glyph.data[..];
-        for y in 0..glyph.placement.height {
-            let row = &data[..(glyph.placement.width as usize)];
-
-            let pixels = row.iter().enumerate().map(|(x, luma)| {
-                Pixel(
-                    Point::new(glyph_origin.x + x as i32, glyph_origin.y - y as i32),
-                    Gray8::new(*luma),
-                )
-            });
-
-            draw.draw_iter(pixels)?;
-
-            data = &data[(glyph.placement.width as usize)..];
-        }
-
-        Ok(Point::new(
-            glyph_origin.x + glyph.placement.width as i32,
-            origin.y,
-        ))
+        display::draw_glyph(draw, origin, color, glyph.placement, &glyph.data)
     }
 }
 
