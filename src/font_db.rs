@@ -244,10 +244,11 @@ where
         draw: &mut Draw,
         origin: Point,
         color: C,
+        over: C,
         c: char,
     ) -> Result<Point, Draw::Error> {
         let glyph = self.fonts.glyph(self, c);
-        display::draw_glyph(draw, origin, color, glyph.placement, &glyph.data)
+        display::draw_glyph(draw, origin, color, over, glyph.placement, &glyph.data)
     }
 }
 

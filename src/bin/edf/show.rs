@@ -62,6 +62,7 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
         device_config.top_margin_px as i32,
     );
 
+    sim.clear(Gray8::WHITE)?;
     display::page(
         &mut sim,
         origin,
@@ -89,7 +90,7 @@ pub fn show(args: ShowArgs) -> Result<(), Box<dyn Error>> {
                         _ => continue,
                     }
 
-                    let _ = sim.clear(Gray8::BLACK);
+                    let _ = sim.clear(Gray8::WHITE);
 
                     let offset = trailer.pages[page_num - 1];
                     let page = edf::read::page(&header, &bytes[offset as usize..])?;

@@ -47,7 +47,7 @@ pub fn page<Draw, S, F, T>(
                 cursor + Point::new(-3, -7),
                 cursor + Point::new(3, -7),
             )
-            .into_styled(PrimitiveStyle::with_stroke(Gray8::WHITE, 1))
+            .into_styled(PrimitiveStyle::with_stroke(Gray8::BLACK, 1))
             .draw(draw);
         }
 
@@ -88,7 +88,8 @@ pub fn page<Draw, S, F, T>(
                 let character_style = CharacterStyle {
                     style: style.clone(),
                     whitespace_px: whitespace_width_quantized,
-                    color: Gray8::WHITE,
+                    color: Gray8::BLACK,
+                    over: Gray8::WHITE,
                 };
                 for c in str.as_ref().chars() {
                     let (next_cursor, expected_width, can_charge) = if c.is_whitespace() {

@@ -13,17 +13,22 @@ use embedded_graphics::{
 use zeno::Placement;
 
 pub trait Color: PixelColor {
-    fn with_luma(&self, luma: u8) -> Self;
+    fn blend(&self, alpha: u8, over: Self) -> Self;
 }
 
 macro_rules! impl_rgb_color {
     ($type_name:ident) => {
         impl Color for pixelcolor::$type_name {
-            fn with_luma(&self, luma: u8) -> Self {
-                let r = self.r() as u16 * luma as u16 / 255u16;
-                let g = self.g() as u16 * luma as u16 / 255u16;
-                let b = self.b() as u16 * luma as u16 / 255u16;
-                pixelcolor::$type_name::new(r as u8, g as u8, b as u8)
+            fn blend(&self, alpha: u8, over: Self) -> Self {
+                let r = self.r() as u16 * alpha as u16 / 255u16;
+                let g = self.g() as u16 * alpha as u16 / 255u16;
+                let b = self.b() as u16 * alpha as u16 / 255u16;
+
+                let or = over.r() as u16 * (255 - alpha) as u16 / 255u16;
+                let og = over.g() as u16 * (255 - alpha) as u16 / 255u16;
+                let ob = over.b() as u16 * (255 - alpha) as u16 / 255u16;
+
+                pixelcolor::$type_name::new((r + or) as u8, (g + og) as u8, (b + ob) as u8)
             }
         }
     };
@@ -32,9 +37,10 @@ macro_rules! impl_rgb_color {
 macro_rules! impl_gray_color {
     ($type_name:ident) => {
         impl Color for pixelcolor::$type_name {
-            fn with_luma(&self, luma: u8) -> Self {
-                let luma = self.luma() as u16 * luma as u16 / 255u16;
-                pixelcolor::$type_name::new(luma as u8)
+            fn blend(&self, alpha: u8, over: Self) -> Self {
+                let l = self.luma() as u16 * alpha as u16 / 255u16;
+                let ol = over.luma() as u16 * (255 - alpha) as u16 / 255u16;
+                pixelcolor::$type_name::new((l + ol) as u8)
             }
         }
     };
@@ -65,6 +71,7 @@ pub trait FontStyle: crate::fonts::FontStyle {
         draw: &mut Draw,
         origin: Point,
         color: C,
+        over: C,
         code_point: char,
     ) -> Result<Point, Draw::Error>;
 }
@@ -73,6 +80,7 @@ pub fn draw_glyph<C: Color, Draw: DrawTarget<Color = C>>(
     draw: &mut Draw,
     origin: Point,
     color: C,
+    over: C,
     placement: Placement,
     mut data: &[u8],
 ) -> Result<Point, Draw::Error> {
@@ -81,10 +89,10 @@ pub fn draw_glyph<C: Color, Draw: DrawTarget<Color = C>>(
     for y in 0..placement.height {
         let row = &data[..(placement.width as usize)];
 
-        let pixels = row.iter().enumerate().map(|(x, luma)| {
+        let pixels = row.iter().enumerate().map(|(x, alpha)| {
             Pixel(
                 Point::new(glyph_origin.x + x as i32, glyph_origin.y - y as i32),
-                color.with_luma(*luma),
+                color.blend(*alpha, over),
             )
         });
 
@@ -103,15 +111,17 @@ pub struct CharacterStyle<S, C> {
     pub style: S,
     pub whitespace_px: i32,
     pub color: C,
+    pub over: C,
 }
 
 impl<S: FontStyle, C> CharacterStyle<S, C> {
-    pub fn new(style: S, color: C) -> Self {
+    pub fn new(style: S, color: C, over: C) -> Self {
         let whitespace_px = style.em_px() / 3;
         CharacterStyle {
             style,
             whitespace_px: whitespace_px.into(),
             color,
+            over,
         }
     }
 }
@@ -134,7 +144,7 @@ impl<S: FontStyle, C: Color> TextRenderer for &CharacterStyle<S, C> {
             if c.is_whitespace() {
                 origin.x += self.whitespace_px;
             } else {
-                origin = self.style.draw_glyph(target, origin, self.color, c)?;
+                origin = self.style.draw_glyph(target, origin, self.color, self.over, c)?;
             }
         }
 
