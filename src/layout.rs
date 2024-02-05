@@ -4,5 +4,5 @@ pub mod epub;
 mod fonts;
 pub mod markdown;
 
-pub use builder::{Builder, Hyphenator, ParagraphBuilder};
+pub use builder::{Align, Builder, Hyphenator, ParagraphBuilder, ParagraphOptions};
 pub use fonts::*;

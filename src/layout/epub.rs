@@ -1,23 +1,21 @@
 #[allow(dead_code)]
 use crate::{
-    layout::{Builder, FontStyle, Fonts, Hyphenator, ParagraphBuilder},
+    layout::{Align, Builder, FontStyle, Fonts, Hyphenator, ParagraphBuilder, ParagraphOptions},
     Command, Header, Style,
 };
 
 use ego_tree::NodeRef;
 use embedded_graphics::primitives::Rectangle;
 use epub::doc::EpubDoc;
-use scraper::{element_ref::ElementRef, html::Html, node::Text, Node};
+use scraper::{html::Html, node::Text, Node};
 use selectors::matching;
 use servo_arc::Arc;
 use servo_url::ServoUrl;
-use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Seek};
 use style::{
     context::QuirksMode,
     media_queries::MediaList,
-    properties::{LonghandId, PropertyDeclarationId, PropertyDeclaration, PropertyDeclarationBlock},
     shared_lock::{Locked, SharedRwLock},
     stylesheet_set::DocumentStylesheetSet,
     stylesheets::{
@@ -29,7 +27,7 @@ use url::Url;
 mod element;
 use element::Element;
 mod element_style;
-use element_style::{ComputedStyle, FontAngle, GenericFontFamily, LengthContext};
+use element_style::{ComputeContext, ComputedStyle, FontAngle, TextAlign};
 
 pub struct Options {
     pixels_per_inch: f32,
@@ -119,6 +117,7 @@ struct LayoutContext<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: H
     options: &'a Options,
     base_url: &'a Url,
     builder: BuilderState<'a, S, F, H>,
+    content_width: u32,
     lock: SharedRwLock,
     stylesheets: DocumentStylesheetSet<DocumentStyleSheet>,
     computed_style: Vec<ComputedStyle>,
@@ -133,6 +132,7 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>
         options: &'a Options,
         base_url: &'a Url,
         builder: Builder<S, F, H>,
+        content_width: u32,
     ) -> Self {
         let computed_style = ComputedStyle::new(options.regular.em_px as f32);
         LayoutContext {
@@ -140,6 +140,7 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>
             options,
             base_url,
             builder: BuilderState::Doc(builder),
+            content_width,
             lock: SharedRwLock::new(),
             stylesheets: DocumentStylesheetSet::new(),
             computed_style: vec![computed_style],
@@ -188,7 +189,7 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>
             Some((ref style, _)) => {
                 let guard = self.lock.read();
                 let block = style.read_with(&guard).block.read_with(&guard);
-                top.compute(block, &LengthContext { pixels_per_inch: self.options.pixels_per_inch })
+                top.compute(block, &ComputeContext { pixels_per_inch: self.options.pixels_per_inch, container_width: self.content_width as f32 })
             }
         };
 
@@ -260,7 +261,7 @@ pub fn build<R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>(
             .unwrap_or("");
         let base_url = Url::parse(&format!("epub:///{}/", base_path)).unwrap_or(root_url.clone());
 
-        let mut context = LayoutContext::new(doc, &options, &base_url, builder);
+        let mut context = LayoutContext::new(doc, &options, &base_url, builder, bounding_box.size.width);
         let doc = Html::parse_document(&content);
         let root = doc
             .tree
@@ -626,13 +627,29 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handl
     // Grouping content
 
     fn p(elem: Element<'a>, context: &mut LayoutContext<'a, R, S, F, H>) {
+        let style = &context.computed_style[context.computed_style.len() - 1];
+        let align = match style.text_align {
+            TextAlign::Left => Align::Left,
+            TextAlign::Right => Align::Right,
+            TextAlign::Center => Align::Center,
+            TextAlign::Justify => Align::Justify,
+        };
+
+        let options = ParagraphOptions {
+            align,
+            margin_bottom_px: style.margin_bottom.0,
+            margin_left_px: style.margin_left.0,
+            margin_right_px: style.margin_right.0,
+            margin_top_px: style.margin_top.0,
+        };
+
+        let indent_px = style.text_indent.0;
+
         context.builder.map(|b| match b {
-            BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph()),
-            BuilderState::Paragraph(p) => BuilderState::Paragraph(p.finish().paragraph()),
+            BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph(Some(options))),
+            BuilderState::Paragraph(p) => BuilderState::Paragraph(p.finish().paragraph(Some(options))),
             _ => unreachable!(),
         });
-
-        let indent_px = context.computed_style[context.computed_style.len() - 1].text_indent.0;
 
         // TODO: remove this and take margins into account.
         if indent_px > 0.0 {

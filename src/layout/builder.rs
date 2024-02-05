@@ -36,11 +36,25 @@ enum Box<'a> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 enum Penalty {
     SoftHyphen,
     HardHyphen,
     HardBreak,
+}
+
+pub enum Align {
+    Left,
+    Right,
+    Center,
+    Justify,
+}
+
+pub struct ParagraphOptions {
+    pub align: Align,
+    pub margin_bottom_px: f32,
+    pub margin_left_px: f32,
+    pub margin_right_px: f32,
+    pub margin_top_px: f32,
 }
 
 // TODO: non-breaking spaces
@@ -164,15 +178,24 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
         self.pages
     }
 
-    pub fn paragraph<'a>(self) -> ParagraphBuilder<'a, S, F, H> {
+    pub fn paragraph<'a>(self, options: Option<ParagraphOptions>) -> ParagraphBuilder<'a, S, F, H> {
         let style = self.style.clone();
         let style_id = self.style_id;
         let whitespace_width = self.whitespace_width;
         let whitespace_stretch = self.whitespace_stretch;
         let whitespace_shrink = self.whitespace_shrink;
 
+        let options = options.unwrap_or(ParagraphOptions {
+            align: Align::Justify,
+            margin_bottom_px: 0.0,
+            margin_left_px: 0.0,
+            margin_right_px: 0.0,
+            margin_top_px: 0.0,
+        });
+
         ParagraphBuilder {
             builder: self,
+            options,
             style,
             style_id,
             whitespace_width,
@@ -180,6 +203,18 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
             whitespace_shrink,
             breaks: Vec::new(),
             items: Vec::new(),
+        }
+    }
+
+    pub fn advance_vertical(&mut self, px: f32) {
+        if px != 0.0 {
+            let remaining = self.bounding_box.size.height as i32 - self.cursor.y;
+            if remaining < px as i32 {
+                self.page_break();
+            } else {
+                self.cursor += Point::new(0, px as i32);
+                self.commands.push(Command::SetCursor { x: self.cursor.x as u16, y: self.cursor.y as u16 });
+            }
         }
     }
 
@@ -207,6 +242,9 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
 
 pub struct ParagraphBuilder<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> {
     builder: Builder<S, F, H>,
+
+    // Paragraph layout options.
+    options: ParagraphOptions,
 
     // Current style.
     style: S,
@@ -398,16 +436,18 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
             data: Penalty::HardBreak,
         });
 
+        let paragraph_width = self.builder.bounding_box.size.width as f32 - self.options.margin_left_px - self.options.margin_right_px;
+
         // Calculate line breaks.
         let breaks = KnuthPlass::new()
             .with_threshold(f32::INFINITY)
-            .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32);
+            .layout_paragraph(&self.items, paragraph_width);
 
         let breaks = if breaks.is_empty() {
             FirstFit::new()
                 .with_threshold(f32::INFINITY)
                 .allow_overflow(true)
-                .layout_paragraph(&self.items, self.builder.bounding_box.size.width as f32)
+                .layout_paragraph(&self.items, paragraph_width)
         } else {
             breaks
         };
@@ -423,11 +463,19 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
         let mut current_line_height = self.builder.line_height;
         let mut current_baseline = self.builder.baseline;
 
+        self.builder.advance_vertical(self.options.margin_top_px);
+
         // Paginate.
         let mut item = 0;
         for b in breaks {
             let items = &self.items[item..=b.break_at];
 
+            let adjustment_ratio = match &self.options.align {
+                Align::Left | Align::Center | Align::Right if b.adjustment_ratio > 0.0 => 0.0,
+                _ => b.adjustment_ratio,
+            };
+
+            let mut line_width = 0.0;
             let mut commands = Vec::new();
 
             // TODO: error diffusion for glue
@@ -466,21 +514,32 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
                             data: Box::Indent,
                         } => {
                             assert!(text.is_empty());
+                            line_width += *width;
                             commands.push(Command::Advance { dx: *width as u16 });
                         }
                         Item::Box {
+                            width,
                             data: Box::Word { text: word },
-                            ..
                         } => {
+                            line_width += *width;
                             text.push_str(word);
                         }
                         Item::Box {
+                            width,
                             data: Box::Char { text: char },
-                            ..
                         } => {
+                            line_width += *width;
                             text.push(*char);
                         }
-                        Item::Glue { .. } => {
+                        Item::Glue { width, stretch, shrink, .. } => {
+                            line_width += if adjustment_ratio < 0.0 {
+                                width + shrink * adjustment_ratio
+                            } else if adjustment_ratio > 0.0 {
+                                width + stretch * adjustment_ratio
+                            } else {
+                                *width
+                            };
+
                             text.push(' ');
                         }
                         _ => {}
@@ -505,8 +564,19 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
                 }
 
                 self.builder.commands.push(Command::SetAdjustmentRatio {
-                    r: b.adjustment_ratio,
+                    r: adjustment_ratio,
                 });
+
+                // TODO: account for leading indent?
+                let indent = self.options.margin_left_px + match &self.options.align {
+                    Align::Center => (paragraph_width - line_width) / 2.0,
+                    Align::Right => paragraph_width as f32 - line_width,
+                    _ => 0.0
+                };
+                if indent != 0.0 {
+                    self.builder.commands.push(Command::Advance { dx: indent as u16 });
+                }
+
                 self.builder.commands.append(&mut commands);
 
                 self.builder.line_height = current_line_height;
@@ -517,6 +587,8 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
 
             item = b.break_at + 1;
         }
+
+        self.builder.advance_vertical(self.options.margin_bottom_px);
 
         self.items.clear();
     }

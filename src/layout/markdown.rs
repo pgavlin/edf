@@ -1,5 +1,5 @@
 use crate::{
-    layout::{Builder, FontStyle, Fonts, Hyphenator, ParagraphBuilder},
+    layout::{Align, Builder, FontStyle, Fonts, Hyphenator, ParagraphBuilder},
     Command, Header, Style,
 };
 
@@ -367,7 +367,7 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
                 if !doc.is_empty() {
                     doc.page_break();
                 }
-                BuilderState::Paragraph(doc.paragraph())
+                BuilderState::Paragraph(doc.paragraph(None))
             }
             _ => panic!("expected a document builder"),
         });
@@ -401,7 +401,7 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
         context.in_paragraph = true;
 
         context.builder.map(|b| match b {
-            BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph()),
+            BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph(None)),
             _ => panic!("expected a document builder"),
         });
 

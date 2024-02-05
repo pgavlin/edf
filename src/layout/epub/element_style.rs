@@ -45,8 +45,33 @@ impl GenericFontFamily {
     }
 }
 
-pub struct LengthContext {
+pub struct ComputeContext {
     pub pixels_per_inch: f32,
+    pub container_width: f32,
+}
+
+impl ComputeContext {
+    fn length_context_for_font_size(&self, em_px: f32) -> LengthContext {
+        LengthContext {
+            pixels_per_inch: self.pixels_per_inch,
+            relative_to: em_px,
+            em_px,
+        }
+    }
+
+    fn length_context_for_margin(&self, em_px: f32) -> LengthContext {
+        LengthContext {
+            pixels_per_inch: self.pixels_per_inch,
+            relative_to: self.container_width,
+            em_px,
+        }
+    }
+}
+
+struct LengthContext {
+    pub pixels_per_inch: f32,
+    pub relative_to: f32,
+    pub em_px: f32,
 }
 
 impl LengthContext {
@@ -62,25 +87,32 @@ impl LengthContext {
         }
     }
 
-    fn font_relative(&self, em_px: f32, length: &specified::length::FontRelativeLength) -> f32 {
+    fn font_relative(&self, length: &specified::length::FontRelativeLength) -> f32 {
         match length {
-            specified::length::FontRelativeLength::Em(n) => n * em_px,
+            specified::length::FontRelativeLength::Em(n) => n * self.em_px,
             _ => todo!(),
         }
     }
 
-    fn no_calc_length(&self, em_px: f32, length: &specified::length::NoCalcLength) -> f32 {
+    fn no_calc_length(&self, length: &specified::length::NoCalcLength) -> f32 {
         match length {
             specified::length::NoCalcLength::Absolute(length) => self.to_pixels(length),
-            specified::length::NoCalcLength::FontRelative(length) => self.font_relative(em_px, length),
+            specified::length::NoCalcLength::FontRelative(length) => self.font_relative(length),
             _ => todo!(),
         }
     }
 
-    fn length(&self, em_px: f32, length: &specified::length::LengthPercentage) -> f32  {
+    fn length(&self, length: &specified::length::LengthPercentage) -> f32  {
         match length {
-            specified::length::LengthPercentage::Length(length) => self.no_calc_length(em_px, length),
-            specified::length::LengthPercentage::Percentage(percentage) => percentage.clamp_to_non_negative().0 * em_px,
+            specified::length::LengthPercentage::Length(length) => self.no_calc_length(length),
+            specified::length::LengthPercentage::Percentage(percentage) => percentage.clamp_to_non_negative().0 * self.relative_to,
+            _ => todo!(),
+        }
+    }
+
+    fn length_percentage_or_auto(&self, length_or_auto: &specified::length::LengthPercentageOrAuto) -> f32 {
+        match length_or_auto {
+            specified::length::LengthPercentageOrAuto::LengthPercentage(length) => self.length(length),
             _ => todo!(),
         }
     }
@@ -102,11 +134,12 @@ impl FontSizePx {
         todo!()
     }
 
-    fn compute(&self, block: &PropertyDeclarationBlock, context: &LengthContext) -> Self {
+    fn compute(&self, block: &PropertyDeclarationBlock, context: &ComputeContext) -> Self {
+        let context = context.length_context_for_font_size(self.0);
         let decl_id = PropertyDeclarationId::Longhand(LonghandId::FontSize);
         if let Some((PropertyDeclaration::FontSize(size), _)) = block.get(decl_id) {
             match size {
-                specified::font::FontSize::Length(length) => Self(context.length(self.0, length)),
+                specified::font::FontSize::Length(length) => Self(context.length(length)),
                 specified::font::FontSize::Keyword(keyword) => self.keyword(keyword),
                 specified::font::FontSize::Smaller => self.smaller(),
                 specified::font::FontSize::Larger => self.larger(),
@@ -208,6 +241,29 @@ impl FontWeight {
     }
 }
 
+macro_rules! margin_px {
+    ($name:ident, $decl_id:ident) => {
+        #[derive(Copy, Clone, Debug, PartialEq)]
+        pub struct $name(pub f32);
+
+        impl $name {
+            fn compute(&self, block: &PropertyDeclarationBlock, context: &LengthContext) -> Self {
+                let decl_id = PropertyDeclarationId::Longhand(LonghandId::$decl_id);
+                if let Some((PropertyDeclaration::$decl_id(length), _)) = block.get(decl_id) {
+                    Self(context.length_percentage_or_auto(length))
+                } else {
+                    *self
+                }
+            }
+        }
+    }
+}
+
+margin_px!(MarginBottomPx, MarginBottom);
+margin_px!(MarginLeftPx, MarginLeft);
+margin_px!(MarginRightPx, MarginRight);
+margin_px!(MarginTopPx, MarginTop);
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TextAlign {
     Left,
@@ -238,16 +294,15 @@ impl TextAlign {
 pub struct TextIndentPx(pub f32);
 
 impl TextIndentPx {
-    fn compute(&self, block: &PropertyDeclarationBlock, em_px: f32, context: &LengthContext) -> Self {
+    fn compute(&self, block: &PropertyDeclarationBlock, context: &LengthContext) -> Self {
         let decl_id = PropertyDeclarationId::Longhand(LonghandId::TextIndent);
         if let Some((PropertyDeclaration::TextIndent(length), _)) = block.get(decl_id) {
-            Self(context.length(em_px, length))
+            Self(context.length(length))
         } else {
             *self
         }
     }
 }
-
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ComputedStyle {
@@ -256,6 +311,10 @@ pub struct ComputedStyle {
     pub font_style: FontAngle,
     pub font_variant: FontVariant,
     pub font_weight: FontWeight,
+    pub margin_bottom: MarginBottomPx,
+    pub margin_left: MarginLeftPx,
+    pub margin_right: MarginRightPx,
+    pub margin_top: MarginTopPx,
     pub text_align: TextAlign,
     pub text_indent: TextIndentPx,
 }
@@ -267,22 +326,32 @@ impl ComputedStyle {
             font_size: FontSizePx(em_px),
             font_style: FontAngle::Normal,
             font_variant: FontVariant::Normal,
+            margin_bottom: MarginBottomPx(0.0),
+            margin_left: MarginLeftPx(0.0),
+            margin_right: MarginRightPx(0.0),
+            margin_top: MarginTopPx(0.0),
             font_weight: FontWeight(400.0),
             text_align: TextAlign::Justify,
             text_indent: TextIndentPx(0.0),
         }
     }
 
-    pub fn compute(&self, block: &PropertyDeclarationBlock, context: &LengthContext) -> Self {
+    pub fn compute(&self, block: &PropertyDeclarationBlock, context: &ComputeContext) -> Self {
         let font_size = self.font_size.compute(block, context);
+        let margin_context = context.length_context_for_margin(font_size.0);
+        let text_context = context.length_context_for_font_size(font_size.0);
         Self {
             font_family: self.font_family.compute(block),
             font_size,
             font_style: self.font_style.compute(block),
             font_variant: self.font_variant.compute(block),
             font_weight: self.font_weight.compute(block),
+            margin_bottom: self.margin_bottom.compute(block, &margin_context),
+            margin_left: self.margin_left.compute(block, &margin_context),
+            margin_right: self.margin_right.compute(block, &margin_context),
+            margin_top: self.margin_top.compute(block, &margin_context),
             text_align: self.text_align.compute(block),
-            text_indent: self.text_indent.compute(block, font_size.0, context),
+            text_indent: self.text_indent.compute(block, &text_context),
         }
     }
 }

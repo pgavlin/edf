@@ -60,7 +60,7 @@ pub fn page<Draw, S, F, T>(
                 return;
             }
             Command::Advance { dx } => cursor += Point::new(*dx as i32, 0),
-            Command::SetCursor { x, y } => cursor = Point::new(*x as i32, *y as i32),
+            Command::SetCursor { x, y } => cursor = origin + Point::new(*x as i32, *y as i32),
             Command::SetAdjustmentRatio { r } => {
                 let r = *r;
                 whitespace_width = if r < 0.0 {
