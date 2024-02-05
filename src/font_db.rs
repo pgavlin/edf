@@ -225,6 +225,7 @@ where
             origin,
             Size::new((cursor.x - origin.x) as u32, self.line_height_px as u32),
         );
+
         layout::TextMetrics { bounding_box }
     }
 }

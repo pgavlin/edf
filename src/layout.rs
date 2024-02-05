@@ -1,4 +1,6 @@
 mod builder;
+#[cfg(feature = "epub")]
+pub mod epub;
 mod fonts;
 pub mod markdown;
 

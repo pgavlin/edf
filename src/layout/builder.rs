@@ -259,6 +259,13 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
         });
     }
 
+    pub fn indent_px(&mut self, size: f32) {
+        self.items.push(Item::Box {
+            width: size,
+            data: Box::Indent,
+        });
+    }
+
     pub fn hard_line_break(&mut self) {
         // Append glue for a ragged-right terminator.
         self.items.push(Item::Glue {

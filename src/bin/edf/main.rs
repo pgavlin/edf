@@ -50,6 +50,9 @@ struct MkArgs {
 #[derive(Debug, Clone, ValueEnum)]
 enum MkFormat {
     Markdown,
+
+    #[cfg(feature = "epub")]
+    Epub
 }
 
 #[derive(Debug, Args)]
