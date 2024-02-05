@@ -246,6 +246,11 @@ pub fn build<R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>(
     let root_url = Url::parse("epub://").unwrap();
     let mut builder = Builder::new(bounding_box, fonts, default_style, hyphenator);
 
+    let title = match doc.metadata.get("title") {
+        Some(values) if !values.is_empty() => values[0].clone(),
+        _ => "Untitled".into(),
+    };
+
     while doc.go_next() {
         let path = match doc.get_current_path() {
             None => continue,
@@ -281,7 +286,7 @@ pub fn build<R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>(
     }
 
     let (styles, commands) = builder.finish();
-    let title = options.title.unwrap_or("Untitled".into());
+    let title = options.title.unwrap_or(title);
     let header = Header { styles, title };
     Ok((header, commands))
 }
