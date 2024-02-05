@@ -213,7 +213,10 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Builder<S, F, H> {
                 self.page_break();
             } else {
                 self.cursor += Point::new(0, px as i32);
-                self.commands.push(Command::SetCursor { x: self.cursor.x as u16, y: self.cursor.y as u16 });
+                self.commands.push(Command::SetCursor {
+                    x: self.cursor.x as u16,
+                    y: self.cursor.y as u16,
+                });
             }
         }
     }
@@ -436,7 +439,9 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
             data: Penalty::HardBreak,
         });
 
-        let paragraph_width = self.builder.bounding_box.size.width as f32 - self.options.margin_left_px - self.options.margin_right_px;
+        let paragraph_width = self.builder.bounding_box.size.width as f32
+            - self.options.margin_left_px
+            - self.options.margin_right_px;
 
         // Calculate line breaks.
         let breaks = KnuthPlass::new()
@@ -531,7 +536,12 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
                             line_width += *width;
                             text.push(*char);
                         }
-                        Item::Glue { width, stretch, shrink, .. } => {
+                        Item::Glue {
+                            width,
+                            stretch,
+                            shrink,
+                            ..
+                        } => {
                             line_width += if adjustment_ratio < 0.0 {
                                 width + shrink * adjustment_ratio
                             } else if adjustment_ratio > 0.0 {
@@ -568,13 +578,16 @@ impl<'a, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> ParagraphBuilder<'a, 
                 });
 
                 // TODO: account for leading indent?
-                let indent = self.options.margin_left_px + match &self.options.align {
-                    Align::Center => (paragraph_width - line_width) / 2.0,
-                    Align::Right => paragraph_width as f32 - line_width,
-                    _ => 0.0
-                };
+                let indent = self.options.margin_left_px
+                    + match &self.options.align {
+                        Align::Center => (paragraph_width - line_width) / 2.0,
+                        Align::Right => paragraph_width as f32 - line_width,
+                        _ => 0.0,
+                    };
                 if indent != 0.0 {
-                    self.builder.commands.push(Command::Advance { dx: indent as u16 });
+                    self.builder
+                        .commands
+                        .push(Command::Advance { dx: indent as u16 });
                 }
 
                 self.builder.commands.append(&mut commands);

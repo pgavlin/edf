@@ -52,7 +52,7 @@ enum MkFormat {
     Markdown,
 
     #[cfg(feature = "epub")]
-    Epub
+    Epub,
 }
 
 #[derive(Debug, Args)]

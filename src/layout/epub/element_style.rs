@@ -1,5 +1,8 @@
 use style::{
-    properties::{generated::longhands::font_variant_caps::computed_value::T as FontVariantCaps, LonghandId, PropertyDeclarationId, PropertyDeclaration, PropertyDeclarationBlock},
+    properties::{
+        generated::longhands::font_variant_caps::computed_value::T as FontVariantCaps, LonghandId,
+        PropertyDeclaration, PropertyDeclarationBlock, PropertyDeclarationId,
+    },
     values::{computed, specified},
 };
 
@@ -16,18 +19,19 @@ pub enum GenericFontFamily {
 
 impl GenericFontFamily {
     fn values(&self, list: &computed::font::FontFamilyList) -> Self {
-        match list.iter().find(|f| matches!(f, computed::font::SingleFontFamily::Generic(_))) {
-            Some(computed::font::SingleFontFamily::Generic(family)) => {
-                match family {
-                    computed::font::GenericFontFamily::None => GenericFontFamily::None,
-                    computed::font::GenericFontFamily::Serif => GenericFontFamily::Serif,
-                    computed::font::GenericFontFamily::SansSerif => GenericFontFamily::SansSerif,
-                    computed::font::GenericFontFamily::Monospace => GenericFontFamily::Monospace,
-                    computed::font::GenericFontFamily::Cursive => GenericFontFamily::Cursive,
-                    computed::font::GenericFontFamily::Fantasy => GenericFontFamily::Fantasy,
-                    computed::font::GenericFontFamily::SystemUi => GenericFontFamily::SystemUi,
-                }
-            }
+        match list
+            .iter()
+            .find(|f| matches!(f, computed::font::SingleFontFamily::Generic(_)))
+        {
+            Some(computed::font::SingleFontFamily::Generic(family)) => match family {
+                computed::font::GenericFontFamily::None => GenericFontFamily::None,
+                computed::font::GenericFontFamily::Serif => GenericFontFamily::Serif,
+                computed::font::GenericFontFamily::SansSerif => GenericFontFamily::SansSerif,
+                computed::font::GenericFontFamily::Monospace => GenericFontFamily::Monospace,
+                computed::font::GenericFontFamily::Cursive => GenericFontFamily::Cursive,
+                computed::font::GenericFontFamily::Fantasy => GenericFontFamily::Fantasy,
+                computed::font::GenericFontFamily::SystemUi => GenericFontFamily::SystemUi,
+            },
             _ => GenericFontFamily::Serif,
         }
     }
@@ -79,7 +83,7 @@ impl LengthContext {
         match length {
             specified::length::AbsoluteLength::Px(n) => *n,
             specified::length::AbsoluteLength::In(n) => n * self.pixels_per_inch,
-            specified::length::AbsoluteLength::Cm(n) => n * self.pixels_per_inch / 2.54 ,
+            specified::length::AbsoluteLength::Cm(n) => n * self.pixels_per_inch / 2.54,
             specified::length::AbsoluteLength::Mm(n) => n * self.pixels_per_inch / 25.4,
             specified::length::AbsoluteLength::Q(n) => n * self.pixels_per_inch / 101.6,
             specified::length::AbsoluteLength::Pt(n) => n * self.pixels_per_inch / 72.0,
@@ -102,17 +106,24 @@ impl LengthContext {
         }
     }
 
-    fn length(&self, length: &specified::length::LengthPercentage) -> f32  {
+    fn length(&self, length: &specified::length::LengthPercentage) -> f32 {
         match length {
             specified::length::LengthPercentage::Length(length) => self.no_calc_length(length),
-            specified::length::LengthPercentage::Percentage(percentage) => percentage.clamp_to_non_negative().0 * self.relative_to,
+            specified::length::LengthPercentage::Percentage(percentage) => {
+                percentage.clamp_to_non_negative().0 * self.relative_to
+            }
             _ => todo!(),
         }
     }
 
-    fn length_percentage_or_auto(&self, length_or_auto: &specified::length::LengthPercentageOrAuto) -> f32 {
+    fn length_percentage_or_auto(
+        &self,
+        length_or_auto: &specified::length::LengthPercentageOrAuto,
+    ) -> f32 {
         match length_or_auto {
-            specified::length::LengthPercentageOrAuto::LengthPercentage(length) => self.length(length),
+            specified::length::LengthPercentageOrAuto::LengthPercentage(length) => {
+                self.length(length)
+            }
             _ => todo!(),
         }
     }
@@ -256,7 +267,7 @@ macro_rules! margin_px {
                 }
             }
         }
-    }
+    };
 }
 
 margin_px!(MarginBottomPx, MarginBottom);

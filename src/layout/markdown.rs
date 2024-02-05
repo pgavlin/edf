@@ -375,10 +375,7 @@ impl<S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handlers<S, F, H> {
         if let Some(ref heading) = context.options.heading {
             let level = context.heading_level.saturating_sub(1) as usize;
             if level < heading.len() {
-                context
-                    .builder
-                    .paragraph()
-                    .set_style(&heading[level]);
+                context.builder.paragraph().set_style(&heading[level]);
             }
         }
     }

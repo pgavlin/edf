@@ -144,7 +144,9 @@ impl<S: FontStyle, C: Color> TextRenderer for &CharacterStyle<S, C> {
             if c.is_whitespace() {
                 origin.x += self.whitespace_px;
             } else {
-                origin = self.style.draw_glyph(target, origin, self.color, self.over, c)?;
+                origin = self
+                    .style
+                    .draw_glyph(target, origin, self.color, self.over, c)?;
             }
         }
 

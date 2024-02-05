@@ -179,7 +179,7 @@ pub fn mk(args: MkArgs) -> Result<(), Box<dyn Error>> {
                 &device_config,
                 config,
             )
-        },
+        }
         #[cfg(feature = "epub")]
         Some(MkFormat::Epub) => {
             let config = match args.format_config {
@@ -202,7 +202,6 @@ pub fn mk(args: MkArgs) -> Result<(), Box<dyn Error>> {
                 &device_config,
                 config,
             )
-
-        },
+        }
     }
 }

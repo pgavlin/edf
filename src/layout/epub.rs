@@ -19,7 +19,8 @@ use style::{
     shared_lock::{Locked, SharedRwLock},
     stylesheet_set::DocumentStylesheetSet,
     stylesheets::{
-        AllowImportRules, CssRule, DocumentStyleSheet, Origin, StyleRule, Stylesheet, StylesheetInDocument,
+        AllowImportRules, CssRule, DocumentStyleSheet, Origin, StyleRule, Stylesheet,
+        StylesheetInDocument,
     },
 };
 use url::Url;
@@ -189,7 +190,13 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>
             Some((ref style, _)) => {
                 let guard = self.lock.read();
                 let block = style.read_with(&guard).block.read_with(&guard);
-                top.compute(block, &ComputeContext { pixels_per_inch: self.options.pixels_per_inch, container_width: self.content_width as f32 })
+                top.compute(
+                    block,
+                    &ComputeContext {
+                        pixels_per_inch: self.options.pixels_per_inch,
+                        container_width: self.content_width as f32,
+                    },
+                )
             }
         };
 
@@ -206,17 +213,16 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>
 
     fn as_style(&self, style: &ComputedStyle) -> Style {
         let font_name = match style.font_style {
-            FontAngle::Normal => {
-                match &self.options.strong {
-                    Some(strong) if style.font_weight.0 >= 600.0 => strong.font_name.clone(),
-                    _ => self.options.regular.font_name.clone(),
-                }
-            }
+            FontAngle::Normal => match &self.options.strong {
+                Some(strong) if style.font_weight.0 >= 600.0 => strong.font_name.clone(),
+                _ => self.options.regular.font_name.clone(),
+            },
             FontAngle::Italic => match &self.options.emphasis {
                 None => self.options.regular.font_name.clone(),
                 Some(emphasis) => emphasis.font_name.clone(),
-            }
-        }.clone();
+            },
+        }
+        .clone();
 
         let em_px: u16 = style.font_size.0 as u16;
 
@@ -261,7 +267,8 @@ pub fn build<R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator>(
             .unwrap_or("");
         let base_url = Url::parse(&format!("epub:///{}/", base_path)).unwrap_or(root_url.clone());
 
-        let mut context = LayoutContext::new(doc, &options, &base_url, builder, bounding_box.size.width);
+        let mut context =
+            LayoutContext::new(doc, &options, &base_url, builder, bounding_box.size.width);
         let doc = Html::parse_document(&content);
         let root = doc
             .tree
@@ -647,7 +654,9 @@ impl<'a, R: Read + Seek, S: FontStyle, F: Fonts<Style = S>, H: Hyphenator> Handl
 
         context.builder.map(|b| match b {
             BuilderState::Doc(doc) => BuilderState::Paragraph(doc.paragraph(Some(options))),
-            BuilderState::Paragraph(p) => BuilderState::Paragraph(p.finish().paragraph(Some(options))),
+            BuilderState::Paragraph(p) => {
+                BuilderState::Paragraph(p.finish().paragraph(Some(options)))
+            }
             _ => unreachable!(),
         });
 
